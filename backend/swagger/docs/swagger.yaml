@@ -12,6 +12,22 @@ definitions:
       name:
         type: string
     type: object
+  http.DirectDownloadResponse:
+    properties:
+      hash:
+        type: string
+      status:
+        type: string
+      url:
+        type: string
+    type: object
+  http.GroupListResponse:
+    properties:
+      groups:
+        items:
+          type: string
+        type: array
+    type: object
   http.HttpResponse:
     properties:
       message:
@@ -499,8 +515,15 @@ definitions:
       defaultUserScope:
         description: default "/" should match folders under path
         type: string
+      denyByDefault:
+        description: deny access unless an "allow" access rule was specifically created.
+        type: boolean
       disableIndexing:
         description: disable the indexing of this source
+        type: boolean
+      disabled:
+        description: disable the source, this is useful so you don't need to remove
+          it from the config file
         type: boolean
       exclude:
         allOf:
@@ -511,7 +534,7 @@ definitions:
         - $ref: '#/definitions/settings.IncludeIndexFilter'
         description: include files and folders from indexing, if exclude is not set
       indexingIntervalMinutes:
-        description: optional manual overide interval in seconds to re-index the source
+        description: optional manual overide interval in minutes to re-index the source
         type: integer
       maxWatchers:
         description: number of concurrent watchers to use for this source, currently
@@ -523,6 +546,10 @@ definitions:
         items:
           type: string
         type: array
+      private:
+        description: designate as source as private -- currently just means no sharing
+          permitted.
+        type: boolean
     type: object
   settings.StylingConfig:
     properties:
@@ -636,17 +663,120 @@ definitions:
         description: 'view mode to use: eg. normal, list, grid, or compact'
         type: string
     type: object
-  share.Link:
+  share.CreateBody:
     properties:
-      expire:
+      allowUpload:
+        description: AllowEdit           bool   `json:"allowEdit,omitempty"`
+        type: boolean
+      allowedUsernames:
+        items:
+          type: string
+        type: array
+      banner:
+        type: string
+      description:
+        type: string
+      disableAnonymous:
+        type: boolean
+      disableFileViewer:
+        type: boolean
+      disableShareCard:
+        type: boolean
+      disableSidebar:
+        type: boolean
+      disableThumbnails:
+        type: boolean
+      downloadURL:
+        type: string
+      downloadsLimit:
         type: integer
+      expires:
+        type: string
+      favicon:
+        type: string
       hash:
         type: string
+      hideNavButtons:
+        type: boolean
+      keepAfterExpiration:
+        type: boolean
+      maxBandwidth:
+        type: integer
+      password:
+        type: string
+      path:
+        type: string
+      quickDownload:
+        type: boolean
+      shareTheme:
+        type: string
+      source:
+        description: backend source is path to maintain between name changes
+        type: string
+      themeColor:
+        type: string
+      title:
+        type: string
+      unit:
+        type: string
+      viewMode:
+        type: string
+    type: object
+  share.Link:
+    properties:
+      allowUpload:
+        description: AllowEdit           bool   `json:"allowEdit,omitempty"`
+        type: boolean
+      allowedUsernames:
+        items:
+          type: string
+        type: array
+      banner:
+        type: string
+      description:
+        type: string
+      disableAnonymous:
+        type: boolean
+      disableFileViewer:
+        type: boolean
+      disableShareCard:
+        type: boolean
+      disableSidebar:
+        type: boolean
+      disableThumbnails:
+        type: boolean
+      downloadURL:
+        type: string
+      downloads:
+        type: integer
+      downloadsLimit:
+        type: integer
+      expire:
+        type: integer
+      favicon:
+        type: string
+      hash:
+        type: string
+      hideNavButtons:
+        type: boolean
+      keepAfterExpiration:
+        type: boolean
+      maxBandwidth:
+        type: integer
       password_hash:
         type: string
       path:
         type: string
+      quickDownload:
+        type: boolean
+      shareTheme:
+        type: string
       source:
+        description: backend source is path to maintain between name changes
+        type: string
+      themeColor:
+        type: string
+      title:
         type: string
       token:
         description: |-
@@ -656,6 +786,8 @@ definitions:
         type: string
       userID:
         type: integer
+      viewMode:
+        type: string
     type: object
   users.AuthToken:
     properties:
@@ -862,6 +994,264 @@ definitions:
 info:
   contact: {}
 paths:
+  /api/access:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a user or group from an allow or deny list for a sourcePath
+        and indexPath.
+      parameters:
+      - description: Source path prefix (e.g. mnt/storage)
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: Index path (e.g. /secret)
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Rule type (allow or deny)
+        in: query
+        name: ruleType
+        required: true
+        type: string
+      - description: Rule category (user or group)
+        in: query
+        name: ruleCategory
+        required: true
+        type: string
+      - description: Username or groupname to remove
+        in: query
+        name: value
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule entry deleted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete access rule entry
+      tags:
+      - Access
+    get:
+      consumes:
+      - application/json
+      description: Lists access rules. Can be filtered by source, path, user, or group.
+        Can also be grouped by user or group.
+      parameters:
+      - description: Source name (e.g. 'default')
+        in: query
+        name: source
+        type: string
+      - description: Index path (e.g. /secret)
+        in: query
+        name: path
+        type: string
+      - description: Username to filter rules for
+        in: query
+        name: user
+        type: string
+      - description: Group name to filter rules for
+        in: query
+        name: group
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Varies based on query. Can be access.FrontendAccessRule (when
+            source and path specified), []access.PrincipalRule, map[string][]access.PrincipalRule,
+            or map[string]access.FrontendAccessRule
+          schema:
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: List access rules
+      tags:
+      - Access
+    post:
+      consumes:
+      - application/json
+      description: Add or update an access rule for a sourcePath and indexPath.
+      parameters:
+      - description: Source path prefix (e.g. mnt/storage)
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: Index path (e.g. /secret)
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: 'Rule details: allow (true/false), ruleCategory (user/group),
+          value (username or groupname)'
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            allow:
+              type: boolean
+            ruleCategory:
+              type: string
+            value:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Rule added or updated
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add or update access rule
+      tags:
+      - Access
+  /api/access/group:
+    delete:
+      consumes:
+      - application/json
+      description: Removes a user from a group.
+      parameters:
+      - description: Group name
+        in: query
+        name: group
+        required: true
+        type: string
+      - description: User name
+        in: query
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User removed from group successfully
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Remove a user from a group
+      tags:
+      - Access
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to a group.
+      parameters:
+      - description: Group name
+        in: query
+        name: group
+        required: true
+        type: string
+      - description: User name
+        in: query
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User added to group successfully
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add a user to a group
+      tags:
+      - Access
+  /api/access/groups:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of all groups or the groups for a specific user.
+      parameters:
+      - description: User name
+        in: query
+        name: user
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Object containing a list of groups
+          schema:
+            $ref: '#/definitions/http.GroupListResponse'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get all groups or groups for a user
+      tags:
+      - Access
   /api/auth/logout:
     post:
       description: Returns a logout URL for the frontend to redirect to.
@@ -1722,6 +2112,40 @@ paths:
       summary: Get share links by path
       tags:
       - Shares
+    post:
+      consumes:
+      - application/json
+      description: Creates a new share link with an optional expiration time and password
+        protection.
+      parameters:
+      - description: Share creation parameters
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/share.CreateBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Created share link
+          schema:
+            $ref: '#/definitions/share.Link'
+        "400":
+          description: Bad request - failed to decode body
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a share link
+      tags:
+      - Shares
   /api/shares:
     delete:
       consumes:
@@ -1774,44 +2198,6 @@ paths:
               type: string
             type: object
       summary: List share links
-      tags:
-      - Shares
-    post:
-      consumes:
-      - application/json
-      description: Creates a new share link with an optional expiration time and password
-        protection.
-      parameters:
-      - description: Source Path of the files to share
-        in: query
-        name: path
-        required: true
-        type: string
-      - description: Source name of the files to share
-        in: query
-        name: source
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Created share link
-          schema:
-            $ref: '#/definitions/share.Link'
-        "400":
-          description: Bad request - failed to decode body
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal server error
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Create a share link
       tags:
       - Shares
   /api/signup:
@@ -2031,11 +2417,10 @@ paths:
       description: Returns the raw content of a file, multiple files, or a directory.
         Supports downloading files as archives in various formats.
       parameters:
-      - description: a list of files in the following format 'filename' and separated
-          by '||' with additional items in the list. (required)
+      - description: if specified, only the files in the list will be downloaded.
+          eg. files=/file1||/folder/file2
         in: query
         name: files
-        required: true
         type: string
       - description: If true, sets 'Content-Disposition' to 'inline'. Otherwise, defaults
           to 'attachment'.
@@ -2081,4 +2466,62 @@ paths:
       summary: Get raw content of a file, multiple files, or directory
       tags:
       - Resources
+  /public/share/direct:
+    get:
+      consumes:
+      - application/json
+      description: Creates a direct download link for a specific file with configurable
+        duration, download count, and speed limits. If a share already exists with
+        matching parameters, the existing share will be reused.
+      parameters:
+      - description: File path to create download link for
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Source name for the file
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: 'Duration in minutes for link validity (default: 60)'
+        in: query
+        name: duration
+        type: string
+      - description: 'Maximum number of downloads allowed (default: unlimited)'
+        in: query
+        name: count
+        type: string
+      - description: 'Download speed limit in kbps (default: unlimited)'
+        in: query
+        name: speed
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Direct download link created
+          schema:
+            $ref: '#/definitions/http.DirectDownloadResponse'
+        "400":
+          description: Bad request - invalid parameters or path is not a file
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden - access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create direct download link
+      tags:
+      - Shares
 swagger: "2.0"

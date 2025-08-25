@@ -7,10 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/files"
 	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-logger/logger"
 
 	_ "github.com/gtsteffaniak/filebrowser/backend/swagger/docs"
@@ -22,7 +19,7 @@ import (
 // @Tags Resources
 // @Accept json
 // @Produce json
-// @Param files query string true "a list of files in the following format 'filename' and separated by '||' with additional items in the list. (required)"
+// @Param files query string false "if specified, only the files in the list will be downloaded. eg. files=/file1||/folder/file2"
 // @Param inline query bool false "If true, sets 'Content-Disposition' to 'inline'. Otherwise, defaults to 'attachment'."
 // @Param algo query string false "Compression algorithm for archiving multiple files or directories. Options: 'zip' and 'tar.gz'. Default is 'zip'."
 // @Success 200 {file} file "Raw file or directory content, or archive for multiple files"
@@ -32,7 +29,14 @@ import (
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /public/dl [get]
 func publicRawHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if d.share.DownloadsLimit > 0 && d.share.Downloads >= d.share.DownloadsLimit {
+		return http.StatusForbidden, fmt.Errorf("share downloads limit reached")
+	}
+	d.share.Mu.Lock()
+	d.share.Downloads++
+	d.share.Mu.Unlock()
 	encodedFiles := r.URL.Query().Get("files")
+
 	// Decode the URL-encoded path
 	f, err := url.QueryUnescape(encodedFiles)
 	if err != nil {
@@ -41,24 +45,40 @@ func publicRawHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 
 	fileList := []string{}
 	for _, file := range strings.Split(f, "||") {
-		fileList = append(fileList, d.fileInfo.Source+"::"+d.fileInfo.Path+file)
+		// Check if file already contains source prefix (source::path format)
+		if strings.Contains(file, "::") {
+			splitFile := strings.SplitN(file, "::", 2)
+			if len(splitFile) == 2 {
+				source := splitFile[0]
+				path := splitFile[1]
+				// Join the share path with the requested path
+				filePath := utils.JoinPathAsUnix(d.share.Path, path)
+				fileList = append(fileList, source+"::"+filePath)
+			} else {
+				// Fallback: treat as plain path
+				filePath := utils.JoinPathAsUnix(d.share.Path, file)
+				fileList = append(fileList, d.fileInfo.Source+"::"+filePath)
+			}
+		} else {
+			// Plain path without source prefix
+			filePath := utils.JoinPathAsUnix(d.share.Path, file)
+			fileList = append(fileList, d.fileInfo.Source+"::"+filePath)
+		}
 	}
+
 	var status int
 	status, err = rawFilesHandler(w, r, d, fileList)
 	if err != nil {
-		logger.Errorf("public share handler: error processing filelist: %v", err)
+		logger.Errorf("public share handler: error processing filelist: '%v' with error %v", f, err)
 		return status, fmt.Errorf("error processing filelist: %v", f)
 	}
 	return status, nil
 }
 
 func publicShareHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	d.fileInfo.Path = strings.TrimPrefix(d.fileInfo.Path, d.share.Path)
+	// disable onlyoffice for public share
+	d.fileInfo.OnlyOfficeId = ""
 	return renderJSON(w, r, d.fileInfo)
-}
-
-func publicUserGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	return renderJSON(w, r, users.PublicUser)
 }
 
 // health godoc
@@ -96,27 +116,8 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/public/preview [get]
 func publicPreviewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	if config.Server.DisablePreviews {
+	if config.Server.DisablePreviews || d.share.DisableThumbnails {
 		return http.StatusNotImplemented, fmt.Errorf("preview is disabled")
 	}
-	path := r.URL.Query().Get("path")
-	var err error
-	if path == "" {
-		return http.StatusBadRequest, fmt.Errorf("invalid request path")
-	}
-	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
-		Path:   utils.JoinPathAsUnix(d.share.Path, path),
-		Modify: d.user.Permissions.Modify,
-		Source: d.fileInfo.Source,
-		Expand: true,
-	})
-	if err != nil {
-		logger.Debugf("public preview handler: error getting file info: %v", err)
-		return 400, fmt.Errorf("file not found")
-	}
-	if fileInfo.Type == "directory" {
-		return http.StatusBadRequest, fmt.Errorf("can't create preview for directory")
-	}
-	d.fileInfo = fileInfo
 	return previewHelperFunc(w, r, d)
 }

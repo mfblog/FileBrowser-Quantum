@@ -7,6 +7,7 @@
       <button
         v-for="(btn, index) in buttons"
         :key="index"
+        class="clickable"
         :class="{ active: activeButton === index }"
         @click="setActiveButton(index, btn.value)"
       >
@@ -112,10 +113,6 @@ button {
 
 .button-group > button:last-child {
   border-right: none;
-}
-
-button:hover {
-  background: #e0e0e0;
 }
 
 button:disabled {

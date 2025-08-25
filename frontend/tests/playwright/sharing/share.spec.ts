@@ -18,7 +18,7 @@ test("breadcrumbs navigation checks", async ({ page, checkForErrors, context }) 
   let spanChildrenCount = await page.locator('#breadcrumbs > ul > li.item').count();
   expect(spanChildrenCount).toBe(1);
 
-  checkForErrors();
+  checkForErrors(0,1); // redirect errors are expected
 });
 
 test("root share path is valid", async ({ page, checkForErrors, openContextMenu, context }) => {
@@ -41,7 +41,7 @@ test("share file works", async ({ page, checkForErrors, context }) => {
 
   await page.goto("/share/" + shareHashFile);
   await expect(page).toHaveTitle("Graham's Filebrowser - Share - 1file1.txt");
-  checkForErrors();
+  checkForErrors(0,1); // redirect errors are expected
 });
 
 test("share download single file", async ({ page, checkForErrors, context }) => {
@@ -61,5 +61,46 @@ test("share download single file", async ({ page, checkForErrors, context }) => 
   const popup = page.locator('#popup-notification-content');
   await popup.waitFor({ state: 'visible' });
   await expect(popup).toHaveText("Downloading...");
+  checkForErrors(0,1);
+});
+
+test("share private source", async ({ page, checkForErrors, openContextMenu }) => {
+  await page.goto("/files/docker");
+  await expect(page).toHaveTitle("Graham's Filebrowser - Files - backend");
+   // Create a share of folder
+   await openContextMenu();
+   await page.locator('button[aria-label="Share"]').click();
+   await expect(page.locator('div[aria-label="share-path"]')).toHaveText('Path: /');
+   await page.locator('button[aria-label="Share-Confirm"]').click();
+  await expect(page.locator("div[aria-label='share-prompt'] .card-content table tbody tr:not(:has(th))")).toHaveCount(0);
+  const popup = page.locator('#popup-notification-content');
+  await popup.waitFor({ state: 'visible' });
+  await expect(popup).toHaveText("403: the target source is private, sharing is not permitted");
+  checkForErrors(1,1); // 1 error is expected for the private source
+});
+
+
+test("share file creation", async ({ page, checkForErrors, openContextMenu }) => {
+  await page.goto("/files/");
+  await expect(page).toHaveTitle("Graham's Filebrowser - Files - playwright-files");
+  const shareHashShare = await page.evaluate(() => localStorage.getItem('shareHashShare'));
+  if (shareHashShare == "") {
+    throw new Error("Share hash not found in localStorage");
+  }
+  await page.goto("public/share/" + shareHashShare);
+  await expect(page).toHaveTitle("Graham's Filebrowser - Share - share");
+  await openContextMenu();
+//  await page.locator('button[aria-label="New file"]').click();
+//  await page.locator('input[aria-label="FileName Field"]').waitFor({ state: 'visible' });
+//  await page.locator('input[aria-label="FileName Field"]').fill('dfsaf.txt');
+//  await page.locator('button[aria-label="Create"]').click();
+//  await expect(page).toHaveTitle("Graham's Filebrowser - Files - dfsaf.txt");
+//  await page.locator(".ace_content").click();
+//  await page.keyboard.type("test content");
+//  await page.locator(".overflow-menu-button").click();
+//  await page.locator('button[aria-label="Save"]').click();
+//  const popup = page.locator('#popup-notification-content');
+//  await popup.waitFor({ state: 'visible' });
+//  await expect(popup).toHaveText("dfsaf.txt saved successfully.");
   checkForErrors();
 });

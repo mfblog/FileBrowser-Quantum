@@ -1,7 +1,7 @@
 <template>
   <header v-if="!isOnlyOffice" :class="['flexbar', { 'dark-mode-header': isDarkMode }]">
     <action
-      v-if="!isShare && !(disableNavButtons && isListingView)"
+      v-if="!(disableNavButtons && isListingView)"
       icon="close_back"
       :label="$t('buttons.close')"
       :disabled="isDisabledMultiAction"
@@ -9,7 +9,7 @@
     />
     <search v-if="showSearch" />
     <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
-    <title v-else class="topTitle">{{ req.name }}</title>
+    <title v-else class="topTitle">{{ getTopTitle }}</title>
     <action
       v-if="isListingView && !disableNavButtons"
       class="menu-button"
@@ -19,12 +19,14 @@
       :disabled="isDisabled"
     />
     <action
-      v-else-if="!isShare && !isListingView && !showQuickSave"
+      class="overflow-menu-button"
+      v-else-if="!isListingView && !showQuickSave"
       :icon="iconName"
       :disabled="noItems"
       @click="toggleOverflow"
     />
     <action
+      class="save-button"
       v-else-if="showQuickSave"
       id="save-button"
       icon="save"
@@ -42,7 +44,7 @@ import { eventBus } from "@/store/eventBus";
 import { getters, state, mutations } from "@/store";
 import Action from "@/components/Action.vue";
 import Search from "@/components/Search.vue";
-import { disableNavButtons } from "@/utils/constants";
+import { disableNavButtons, shareInfo } from "@/utils/constants";
 
 export default {
   name: "UnifiedHeader",
@@ -56,6 +58,12 @@ export default {
     };
   },
   computed: {
+    getTopTitle() {
+      if (getters.isShare() && shareInfo.title) {
+        return shareInfo.title;
+      }
+      return state.req.name;
+    },
     showQuickSave() {
       if (getters.currentView() != "editor" || !state.user.permissions.modify) {
         return false;
@@ -86,10 +94,10 @@ export default {
       return icons[state.user.viewMode] || "grid_view";
     },
     isShare() {
-      return getters.currentView() == "share";
+      return getters.isShare();
     },
     noItems() {
-      return !this.showEdit && !this.showSave && !this.showDelete;
+      return !state.contextMenuHasItems;
     },
     showEdit() {
       return window.location.hash != "#edit" && state.user.permissions.modify;
@@ -101,13 +109,14 @@ export default {
       return getters.currentView() == "editor" && state.user.permissions.modify;
     },
     showSearch() {
-      return getters.isLoggedIn() && getters.currentView() === "listingView";
+      return getters.isLoggedIn() && getters.currentView() === "listingView" && !getters.isShare();
     },
     isDisabled() {
-      return state.isSearchActive || getters.currentPromptName() != null;
+      return state.isSearchActive || getters.currentPromptName() != "";
     },
     isDisabledMultiAction() {
-      return this.isDisabled || (getters.isStickySidebar() && state.multiButtonState === "menu");
+      const shareDisabled = shareInfo.disableSidebar && getters.multibuttonState() === "menu";
+      return this.isDisabled || (getters.isStickySidebar() && getters.multibuttonState() === "menu") || shareDisabled;
     },
     showSwitchView() {
       return getters.currentView() === "listingView";
@@ -155,6 +164,8 @@ export default {
       const listingView = getters.currentView();
       if (listingView == "listingView") {
         mutations.toggleSidebar();
+      } else if (listingView == "settings" && state.isMobile) {
+        mutations.toggleSidebar();
       } else {
         mutations.closeHovers();
         if (listingView === "settings") {
@@ -168,3 +179,10 @@ export default {
   },
 };
 </script>
+
+<style scoped>
+header button:hover {
+  box-shadow: unset !important;
+  -webkit-box-shadow: unset !important;
+}
+</style>

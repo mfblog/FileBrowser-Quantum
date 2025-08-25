@@ -11,7 +11,6 @@ import (
 	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
 	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
 	"github.com/gtsteffaniak/filebrowser/backend/database/share"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
 	"github.com/gtsteffaniak/filebrowser/backend/database/storage/bolt"
 	"github.com/gtsteffaniak/filebrowser/backend/database/users"
 	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
@@ -23,15 +22,9 @@ func setupTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authStore, userStore, shareStore, settingsStore, err := bolt.NewStorage(db)
+	store, err = bolt.NewStorage(db)
 	if err != nil {
 		t.Fatal(err)
-	}
-	store = &storage.Storage{
-		Auth:     authStore,
-		Users:    userStore,
-		Share:    shareStore,
-		Settings: settingsStore,
 	}
 	config = &settings.Config // mocked
 	config.Server.SourceMap = map[string]settings.Source{
@@ -157,8 +150,26 @@ func TestPublicShareHandlerAuthentication(t *testing.T) {
 		{
 			name: "Public share, no auth required",
 			share: &share.Link{
-				Hash:   "public_hash",
-				Source: "/srv",
+				Hash: "public_hash",
+				CommonShare: share.CommonShare{
+					Source: "/srv",
+				},
+			},
+			expectedStatusCode: 0, // zero means 200 on helpers
+		},
+		{
+			name: "Private share, valid password when token exists",
+			share: &share.Link{
+				Hash:         "pw_and_token_hash",
+				UserID:       1,
+				PasswordHash: passwordBcrypt,
+				Token:        "some_random_token",
+				CommonShare: share.CommonShare{
+					Source: "/srv",
+				},
+			},
+			extraHeaders: map[string]string{
+				"X-SHARE-PASSWORD": "password",
 			},
 			expectedStatusCode: 0, // zero means 200 on helpers
 		},
@@ -179,7 +190,9 @@ func TestPublicShareHandlerAuthentication(t *testing.T) {
 				UserID:       1,
 				PasswordHash: passwordBcrypt,
 				Token:        "123",
-				Source:       "/srv",
+				CommonShare: share.CommonShare{
+					Source: "/srv",
+				},
 			},
 			token:              "123",
 			expectedStatusCode: 0, // zero means 200 on helpers

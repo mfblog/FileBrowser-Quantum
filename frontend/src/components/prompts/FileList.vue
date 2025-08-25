@@ -6,7 +6,7 @@
         {{ $t("prompts.destinationSource") }}
       </label>
       <select id="destinationSource" v-model="currentSource" @change="onSourceChange"
-          class="input input--block">
+          class="input">
         <option v-for="source in availableSources" :key="source" :value="source">
           {{ source }}
         </option>
@@ -14,7 +14,7 @@
     </div>
 
     <div>Source: {{ sourcePath.source }} </div> <!-- eslint-disable-line @intlify/vue-i18n/no-raw-text -->
-    <div aria-label="filelist-path" class="searchContext">{{$t('search.path')}} {{ sourcePath.path }}</div>
+    <div aria-label="filelist-path" class="searchContext button clickable">{{$t('search.path')}} {{ sourcePath.path }}</div>
     <ul class="file-list">
       <li
         @click="itemClick"

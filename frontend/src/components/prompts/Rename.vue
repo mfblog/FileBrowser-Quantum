@@ -1,82 +1,59 @@
 <template>
-  <div class="card floating">
-    <div class="card-title">
-      <h2>{{ $t("prompts.rename") }}</h2>
-    </div>
+  <div class="card-title">
+    <h2>{{ $t("prompts.rename") }}</h2>
+  </div>
 
-          <div class="card-content">
-        <p>{{ $t("prompts.renameMessage", { filename: oldName() }) }}</p>
-      <input
-        class="input input--block"
-        :class="{ 'invalid-form': !validateFileName(name) }"
-        v-focus
-        type="text"
-        @keyup.enter="submit"
-        v-model.trim="name"
-      />
-      <p v-if="!validateFileName(name) && name.length > 0" class="validation-error">
-        {{ $t("prompts.invalidName") }}
-      </p>
-    </div>
+  <div class="card-content">
+    <p>{{ $t("prompts.renameMessage", { filename: oldName }) }}</p>
+    <input class="input" :class="{ 'form-invalid': !validateFileName(name) }" v-focus type="text"
+      @keyup.enter="submit" v-model.trim="name" />
+    <p v-if="!validateFileName(name) && name.length > 0" class="validation-error">
+      {{ $t("prompts.invalidName") }}
+    </p>
+  </div>
 
-    <div class="card-action">
-      <button
-        class="button button--flat button--grey"
-        @click="closeHovers"
-        :aria-label="$t('buttons.cancel')"
-        :title="$t('buttons.cancel')"
-      >
-        {{ $t("buttons.cancel") }}
-      </button>
-      <button
-        @click="submit"
-        class="button button--flat"
-        :disabled="!validateFileName(name) || name.length === 0"
-        type="submit"
-        :aria-label="$t('buttons.rename')"
-        :title="$t('buttons.rename')"
-      >
-        {{ $t("buttons.rename") }}
-      </button>
-    </div>
+  <div class="card-action">
+    <button class="button button--flat button--grey" @click="closeHovers" :aria-label="$t('buttons.cancel')"
+      :title="$t('buttons.cancel')">
+      {{ $t("buttons.cancel") }}
+    </button>
+    <button @click="submit" class="button button--flat" :disabled="!validateFileName(name) || name.length === 0"
+      type="submit" :aria-label="$t('buttons.rename')" :title="$t('buttons.rename')">
+      {{ $t("buttons.rename") }}
+    </button>
   </div>
 </template>
 <script>
 import { filesApi } from "@/api";
-import { state, getters, mutations } from "@/store";
+import { mutations } from "@/store";
 import { notify } from "@/notify";
 
 export default {
   name: "rename",
+  props: {
+    item: {
+      type: Object,
+      required: true,
+      default: () => ({ source: "", path: "", name: "" })
+    }
+  },
   data() {
     return {
-      name: "",
+      name: this.item?.name || "",
     };
   },
-  created() {
-    this.name = this.oldName();
-  },
   computed: {
-    req() {
-      return state.req;
-    },
-    selected() {
-      return state.selected;
-    },
-    selectedCount() {
-      return state.selectedCount;
-    },
-    isListing() {
-      return getters.isListing();
-    },
     closeHovers() {
       return mutations.closeHovers;
     },
-    currentPrompt() {
-      return getters.currentPrompt();
+    oldName() {
+      return this.item?.name || "";
     },
   },
   methods: {
+    /**
+     * @param {string} value
+     */
     validateFileName(value) {
       if (value === "") {
         return false;
@@ -84,25 +61,6 @@ export default {
       // Check for forbidden characters: forward slash and backslash
       const forbiddenChars = /[/\\]/;
       return !forbiddenChars.test(value);
-    },
-    cancel() {
-      mutations.closeHovers();
-    },
-    oldName() {
-      // Check if this is being called from upload context with props
-      if (this.currentPrompt && this.currentPrompt.props && this.currentPrompt.props.folderName) {
-        return this.currentPrompt.props.folderName;
-      }
-
-      if (!this.isListing) {
-        return state.req.name;
-      }
-
-      if (getters.selectedCount() === 0 || getters.selectedCount() > 1) {
-        return "";
-      }
-
-      return state.req.items[this.selected[0]].name;
     },
     async submit() {
       // Validate before submitting
@@ -112,27 +70,15 @@ export default {
       }
 
       try {
-        // Check if this is being called from upload context with custom confirm handler
-        if (this.currentPrompt && this.currentPrompt.confirm) {
-          // This is for upload rename - call the custom confirm handler
-          this.currentPrompt.confirm(this.name);
-          return;
-        }
-
-        // Default file rename operation
         const items = [{
-          from: state.req.path + "/" + state.req.items[this.selected[0]].name,
-          fromSource: state.req.source,
-          to: state.req.path + "/" + this.name,
-          toSource: state.req.source,
+          from: this.item.path,
+          fromSource: this.item.source,
+          to: this.item.path.replace(/[^/]+$/, this.name),
+          toSource: this.item.source,
         }];
 
         await filesApi.moveCopy(items, "move");
         mutations.closeHovers();
-        if (!this.isListing) {
-          this.$router.push({ path: newLink });
-          return;
-        }
       } catch (error) {
         notify.showError(error);
       }
@@ -142,7 +88,7 @@ export default {
 </script>
 
 <style scoped>
-.invalid-form {
+.form-invalid {
   border-color: var(--red) !important;
 }
 

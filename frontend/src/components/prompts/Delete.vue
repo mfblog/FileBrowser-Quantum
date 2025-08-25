@@ -1,5 +1,4 @@
 <template>
-  <div class="card floating">
     <div class="card-content">
       <p v-if="selectedCount === 1">
         {{ $t("prompts.deleteMessageSingle") }}
@@ -7,7 +6,7 @@
       <p v-else>
         {{ $t("prompts.deleteMessageMultiple", { count: selectedCount }) }}
       </p>
-      <div style="display: grid" aria-label="delete-path" class="searchContext">
+      <div style="display: grid" aria-label="delete-path" class="searchContext button">
         <span v-for="(item, index) in nav" :key="index"> {{ item }} </span>
       </div>
     </div>
@@ -21,7 +20,6 @@
         {{ $t("buttons.delete") }}
       </button>
     </div>
-  </div>
 </template>
 
 <script>

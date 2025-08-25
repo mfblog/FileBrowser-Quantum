@@ -1,19 +1,19 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" v-if="!isDeleted">
-      <ExtendedImage v-if="previewType == 'image' || pdfConvertable" :src="raw" 
-        @navigate-previous="prev" 
+      <ExtendedImage v-if="previewType == 'image' || pdfConvertable && !disableFileViewer" :src="raw" 
+        @navigate-previous="prev"
         @navigate-next="next">
       </ExtendedImage>
-      <audio v-else-if="previewType == 'audio'" ref="player" :src="raw" controls :autoplay="autoPlay"
+      <audio v-else-if="previewType == 'audio' && !disableFileViewer" ref="player" :src="raw" controls :autoplay="autoPlay"
         @play="autoPlay = true"></audio>
-      <video v-else-if="previewType == 'video'" ref="player" :src="raw" controls :autoplay="autoPlay"
+      <video v-else-if="previewType == 'video' && !disableFileViewer" ref="player" :src="raw" controls :autoplay="autoPlay"
         @play="autoPlay = true">
         <track kind="captions" v-for="(sub, index) in subtitlesList" :key="index" :src="sub.src"
           :label="'Subtitle ' + sub.name" :default="index === 0" />
       </video>
 
-      <div v-else-if="previewType == 'pdf'" class="pdf-wrapper">
+      <div v-else-if="previewType == 'pdf' && !disableFileViewer" class="pdf-wrapper">
         <iframe class="pdf" :src="raw"></iframe>
         <a v-if="isMobileSafari" :href="raw" target="_blank" class="button button--flat floating-btn">
           <div>
@@ -56,7 +56,7 @@
   </div>
 </template>
 <script>
-import { filesApi } from "@/api";
+import { filesApi, publicApi } from "@/api";
 import { url } from "@/utils";
 import throttle from "@/utils/throttle";
 import ExtendedImage from "@/components/files/ExtendedImage.vue";
@@ -65,6 +65,7 @@ import { getFileExtension } from "@/utils/files";
 import { convertToVTT } from "@/utils/subtitles";
 import { getTypeInfo } from "@/utils/mimetype";
 import { muPdfAvailable } from "@/utils/constants";
+import { shareInfo } from "@/utils/constants";
 export default {
   name: "preview",
   components: {
@@ -127,10 +128,20 @@ export default {
     },
     raw() {
       if (this.pdfConvertable) {
+        if (getters.isShare()) {
+          const previewPath = url.removeTrailingSlash(state.req.path);
+          return publicApi.getPreviewURL(previewPath,"original");
+        }
         return (
-          filesApi.getPreviewURL(state.req.source, state.req.path, state.req.modified) +
-          "&size=original"
+          filesApi.getPreviewURL(state.req.source, state.req.path, state.req.modified) + "&size=original"
         );
+      }
+      if (getters.isShare()) {
+        return publicApi.getDownloadURL({
+          path: state.share.subPath,
+          hash: state.share.hash,
+          token: state.share.token,
+        }, [state.req.path], true);
       }
       return filesApi.getDownloadURL(state.req.source, state.req.path, true);
     },
@@ -144,10 +155,14 @@ export default {
       return this.nextLink !== "";
     },
     downloadUrl() {
+      if (getters.isShare()) {
+        return publicApi.getDownloadURL({
+          path: state.share.subPath,
+          hash: state.share.hash,
+          token: state.share.token,
+        }, [state.req.path]);
+      }
       return filesApi.getDownloadURL(state.req.source, state.req.path);
-    },
-    showMore() {
-      return getters.currentPromptName() === "more";
     },
     getSubtitles() {
       return this.subtitles();
@@ -157,6 +172,9 @@ export default {
     },
     deletedItem() {
       return state.deletedItem;
+    },
+    disableFileViewer() {
+      return shareInfo.disableFileViewer;
     },
   },
   watch: {
@@ -223,7 +241,16 @@ export default {
       for (const subtitleFile of state.req.subtitles) {
         const ext = getFileExtension(subtitleFile);
         const path = url.removeLastDir(state.req.path) + "/" + subtitleFile;
-        const resp = await filesApi.fetchFiles(state.req.source, path, true); // Fetch .srt file
+
+        let resp;
+        if (getters.isShare()) {
+          // Use public API for shared files
+          resp = await publicApi.fetchPub(path, state.share.hash, "", true);
+        } else {
+          // Use regular files API for authenticated users
+          resp = await filesApi.fetchFiles(state.req.source, path, true);
+        }
+
         let vttContent = resp.content;
         // Convert SRT to VTT (assuming srt2vtt() does this)
         vttContent = convertToVTT(ext, resp.content);
@@ -246,7 +273,7 @@ export default {
       this.$router.replace({ path: this.nextLink });
     },
     async keyEvent(event) {
-      if (getters.currentPromptName() != null) {
+      if (getters.currentPromptName()) {
         return;
       }
 
@@ -291,9 +318,18 @@ export default {
         });
       }
       const directoryPath = url.removeLastDir(state.req.path);
+      if (!this.listing || this.listing == "undefined") {
+        let res;
+        if (getters.isShare()) {
+          // Use public API for shared files
+          res = await publicApi.fetchPub(directoryPath, state.share.hash);
+        } else {
+          // Use regular files API for authenticated users
+          res = await filesApi.fetchFiles(state.req.source, directoryPath);
+        }
+      }
       if (!this.listing) {
-        const res = await filesApi.fetchFiles(state.req.source, directoryPath);
-        this.listing = res.items;
+        this.listing = [state.req]
       }
       this.name = state.req.name;
       this.previousLink = "";
@@ -325,12 +361,19 @@ export default {
       }
     },
     prefetchUrl(item) {
+      if (getters.isShare()) {
+        return this.fullSize
+          ? publicApi.getDownloadURL({
+              path: item.path,
+              hash: state.share.hash,
+              token: state.share.token,
+              inline: true,
+            }, [item.path])
+          : publicApi.getPreviewURL(state.share.hash, item.path);
+      }
       return this.fullSize
         ? filesApi.getDownloadURL(state.req.source, item.path, true)
         : filesApi.getPreviewURL(state.req.source, item.path, item.modified);
-    },
-    openMore() {
-      this.currentPrompt = "more";
     },
     resetPrompts() {
       this.currentPrompt = null;

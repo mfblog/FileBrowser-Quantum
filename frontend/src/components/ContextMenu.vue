@@ -10,54 +10,44 @@
       ref="contextMenu"
       v-if="showContext"
       :style="centered ? {} : { top: posY + 'px', left: posX + 'px' }"
-      class="button no-select"
+      class="button no-select fb-shadow"
       :class="{ 'dark-mode': isDarkMode, 'centered': centered }"
       :key="showCreate ? 'create-mode' : 'normal-mode'"
     >
       <div v-if="selectedCount > 0" class="button selected-count-header">
         <span>{{ selectedCount }} {{ $t("prompts.selected") }} </span>
       </div>
-
       <action
-        v-if="!showCreate && !isSearchActive && userPerms.modify"
+        v-if="!showCreate && !isSearchActive && userPerms.modify && !isShare"
         icon="add"
         :label="$t('buttons.new')"
         @action="startShowCreate"
       />
-
       <action
         v-if="showCreate && !isSearchActive && userPerms.modify"
         icon="create_new_folder"
         :label="$t('sidebar.newFolder')"
         @action="showHover('newDir')"
       />
-
       <action
         v-if="showCreate && userPerms.modify && !isSearchActive"
         icon="note_add"
         :label="$t('sidebar.newFile')"
         @action="showHover('newFile')"
       />
-
       <action
         v-if="showCreate && userPerms.modify && !isSearchActive"
         icon="file_upload"
         :label="$t('buttons.upload')"
         @action="uploadFunc"
       />
-
       <action
         v-if="!showCreate && selectedCount == 1"
         icon="info"
         :label="$t('buttons.info')"
         show="info"
       />
-      <action
-        v-if="showSelectMultiple"
-        icon="check_circle"
-        :label="$t('buttons.selectMultiple')"
-        @action="toggleMultipleSelection"
-      />
+
       <action
         v-if="(!showCreate && selectedCount > 0)"
         icon="file_download"
@@ -69,13 +59,13 @@
         v-if="selectedCount <= 1 && showShare"
         icon="share"
         :label="$t('buttons.share')"
-        show="share"
+        @action="showShareHover"
       />
       <action
         v-if="!showCreate && selectedCount == 1 && userPerms.modify && !isSearchActive"
         icon="mode_edit"
         :label="$t('buttons.rename')"
-        show="rename"
+        @action="showRenameHover"
       />
       <action
         v-if="!showCreate && selectedCount > 0 && userPerms.modify"
@@ -84,22 +74,34 @@
         show="copy"
       />
       <action
+        v-if="!showCreate && selectedCount == 1 && isSearchActive"
+        icon="folder"
+        :label="$t('buttons.openParentFolder')"
+        @action="openParentFolder"  
+      />
+      <action
         v-if="!showCreate && selectedCount > 0 && userPerms.modify"
         icon="forward"
         :label="$t('buttons.moveFile')"
         show="move"
       />
       <action
-        v-if="!showCreate && selectedCount > 0 && userPerms.modify"
-        icon="file_upload"
-        :label="$t('buttons.upload')"
-        @action="showUpload"
-      />
-      <action
-        v-if="!showCreate && selectedCount > 0 && userPerms.modify"
+        v-if="showDelete"
         icon="delete"
         :label="$t('buttons.delete')"
         show="delete"
+      />
+      <action
+        v-if="showAccess"
+        icon="lock"
+        :label="$t('access.rules')"
+        @action="showAccessHover"
+      />
+      <action
+        v-if="showSelectMultiple"
+        icon="check_circle"
+        :label="$t('buttons.selectMultiple')"
+        @action="toggleMultipleSelection"
       />
     </div>
   </transition>
@@ -117,10 +119,11 @@
         top: '3em',
         right: '1em',
       }"
-      class="button no-select"
+      class="button no-select fb-shadow"
       :class="{ 'dark-mode': isDarkMode }"
     >
       <action v-if="showGoToRaw" icon="open_in_new" :label="$t('buttons.openFile')" @action="goToRaw()" />
+      <action v-if="shouldShowParentFolder()" icon="folder" :label="$t('buttons.openParentFolder')" @action="openParentFolder" />
       <action v-if="isPreview" icon="file_download" :label="$t('buttons.download')" @action="startDownload" />
       <action v-if="showEdit" icon="edit" :label="$t('buttons.edit')" @action="edit()" />
       <action v-if="showSave" icon="save" :label="$t('buttons.save')" @action="save()" />
@@ -137,7 +140,8 @@ import { onlyOfficeUrl } from "@/utils/constants.js";
 import buttons from "@/utils/buttons";
 import { notify } from "@/notify";
 import { eventBus } from "@/store/eventBus";
-import { filesApi } from "@/api";
+import { filesApi, publicApi } from "@/api";
+import { url } from "@/utils";
 export default {
   name: "ContextMenu",
   components: {
@@ -159,11 +163,14 @@ export default {
     },
   },
   computed: {
+    isShare() {
+      return getters.isShare();
+    },
     showSelectMultiple() {
       if (this.isMultiple || this.isSearchActive) {
         return false;
       }
-      if (state.user.showSelectMultiple) {
+      if (state.user?.showSelectMultiple) {
         return true;
       }
       if (getters.isMobile()) {
@@ -171,18 +178,29 @@ export default {
       }
       return false
     },
-    noItems() {
-      return !this.showEdit && !this.showSave && !this.showDelete;
+    hasOverflowItems() {
+      return this.showEdit || this.showDelete || this.showSave || this.showGoToRaw;
     },
     showGoToRaw() {
-      return getters.currentView() == "preview" || 
-        getters.currentView() == "markdownViewer"
+      const cv = getters.currentView();
+      return cv == "preview" || cv == "markdownViewer" || cv == "editor";
     },
     showEdit() {
-      return getters.currentView() == "markdownViewer" && state.user.permissions.modify;
+      const cv = getters.currentView();
+      if (getters.isShare()) {
+        // TODO: add support for editing shared files
+        return false;
+      }
+      return cv == "markdownViewer" && state.user?.permissions?.modify;
     },
     showDelete() {
-      return state.user.permissions.modify && this.isPreview;
+      const cv = getters.currentView();
+      if (getters.isShare() || !state.user?.permissions?.modify) {
+        // TODO: add support for deleting shared files
+        return false;
+      }
+      const showDelete = cv != "settings" && !this.showCreate && this.selectedCount > 0 && !this.isSearchActive;
+      return showDelete;
     },
     isPreview() {
       const cv = getters.currentView();
@@ -191,23 +209,28 @@ export default {
         cv == "onlyOfficeEditor" ||
         cv == "markdownViewer" ||
         cv == "epubViewer" ||
-        cv == "docViewer"
+        cv == "docViewer" ||
+        cv == "editor"
       );
     },
     showSave() {
-      return getters.currentView() == "editor" && state.user.permissions.modify;
+      if (getters.isShare()) {
+        // TODO: add support for saving shared files
+        return false;
+      }
+      return getters.currentView() == "editor" && state.user?.permissions?.modify;
     },
     showOverflow() {
       return getters.currentPromptName() == "OverflowMenu";
     },
+    showAccess() {
+      return state.user?.permissions?.admin && this.showCreate;
+    },
     showShare() {
-      return (
-        state.user?.permissions &&
-        state.user?.permissions.share &&
-        state.user.username != "publicUser" &&
-        getters.currentView() != "share" &&
-        !this.isSearchActive
-      );
+      if (getters.isShare()) {
+        return false;
+      }
+      return state.user?.permissions?.share;
     },
     showContext() {
       return getters.currentPromptName() == "ContextMenu";
@@ -227,6 +250,9 @@ export default {
     centered() {
       return this.showCentered || this.isMobileDevice || !this.posX || !this.posY;
     },
+    isMobileDevice() {
+      return state.isMobile;
+    },
     isDarkMode() {
       return getters.isDarkMode();
     },
@@ -235,13 +261,30 @@ export default {
     },
     userPerms() {
       return {
-        upload: state.user.permissions?.modify && state.selected.length > 0,
-        share: state.user.permissions.share,
-        modify: state.user.permissions.modify,
+        upload: state.user?.permissions?.modify && state.selected.length > 0,
+        share: state.user?.permissions?.share,
+        modify: state.user?.permissions?.modify,
       };
+    },
+    currentPrompt() {
+      return getters.currentPrompt();
     },
   },
   watch: {
+    currentPrompt: {
+      handler(prompt) {
+        if (prompt && prompt.name === "ContextMenu") {
+          this.setPositions();
+        }
+      },
+      deep: true,
+    },
+    hasOverflowItems: {
+      handler(hasItems) {
+        mutations.setContextMenuHasItems(hasItems);
+      },
+      immediate: true,
+    },
     showContext: {
       handler(newVal) {
         if (newVal) {
@@ -263,6 +306,18 @@ export default {
     }
   },
   methods: {
+    shouldShowParentFolder() {
+      return this.isPreview && state.req.path != "/";
+    },
+    showAccessHover() {
+      mutations.showHover({
+        name: "access",
+        props: {
+          sourceName: state.sources.current,
+          path: state.req?.path || "",
+        },
+      });
+    },
     // Animation methods
     beforeEnter(el) {
       this.isAnimating = true;
@@ -326,6 +381,9 @@ export default {
       }, 300);
     },
     startShowCreate() {
+      if (getters.isShare()) {
+        return;
+      }
       this.showCreate = true;
     },
     uploadFunc() {
@@ -334,6 +392,22 @@ export default {
     showHover(value) {
       return mutations.showHover(value);
     },
+    showShareHover() {
+      mutations.showHover({
+        name: "share",
+        props: {
+          item: getters.selectedCount() == 1 ? getters.getFirstSelected() : state.req
+        },
+      });
+    },
+    showRenameHover() {
+      mutations.showHover({
+        name: "rename",
+        props: {
+          item: getters.selectedCount() == 1 ? getters.getFirstSelected() : state.req
+        },
+      });
+    },
     setPositions() {
       const contextProps = getters.currentPrompt().props;
       this.posX = contextProps.posX;
@@ -341,7 +415,7 @@ export default {
     },
     initializeCreateState() {
       // Only set initial showCreate state, don't override user choices
-      if (state.selected.length > 0) {
+      if (state.selected.length > 0 || getters.isShare()) {
         this.showCreate = false;
       } else {
         this.showCreate = true;
@@ -352,17 +426,24 @@ export default {
       mutations.closeHovers();
     },
     startDownload() {
-      downloadFiles(state.selected);
+      mutations.closeHovers();
+      const items = state.selected.length > 0 ? state.selected : [state.req];
+      downloadFiles(items);
     },
     goToRaw() {
-      const downloadUrl = filesApi.getDownloadURL(
-          state.req.source,
-          state.req.path,
-          true,
-          false
-        );
-        window.open(downloadUrl, "_blank");
+      if (getters.isShare()) {
+        window.open(publicApi.getDownloadURL(state.share, state.req.path, true), "_blank");
         mutations.closeHovers();
+        return;
+      }
+      const downloadUrl = filesApi.getDownloadURL(
+        state.req?.source || "",
+        state.req?.path || "",
+        true,
+        false
+      );
+      window.open(downloadUrl, "_blank");
+      mutations.closeHovers();
     },
     async edit() {
       window.location.hash = "#edit";
@@ -376,7 +457,7 @@ export default {
         notify.showSuccess("File Saved!");
       } catch (e) {
         buttons.done(button);
-        notify.showError("Error saving file: ", e);
+        notify.showError(`Error saving file: ${e}`);
       }
 
       mutations.closeHovers();
@@ -385,9 +466,17 @@ export default {
       mutations.showHover({
         name: "upload",
         props: {
-          filesToReplace: state.selected.map((item) => item.name),
+          filesToReplace: state.selected.map((item) => item.name || ""),
         },
       });
+    },
+    openParentFolder() {
+      const item = state.selected.length > 0 ? state.selected[0] : state.req;
+      let parentPath = url.removeLastDir(item.path);
+      if (parentPath == "") {
+        parentPath = "/";
+      }
+      url.goToItem(state.req.source, parentPath);
     },
   },
 };
@@ -405,7 +494,6 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  box-shadow: 0px 0px 15px 0px #404040;
 }
 
 #context-menu.centered {

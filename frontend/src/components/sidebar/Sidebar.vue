@@ -1,17 +1,18 @@
 <template>
   <nav
     id="sidebar"
-    :class="{ active: active, 'dark-mode': isDarkMode, 'behind-overlay': behindOverlay }"
+    :class="{ active: active, 'dark-mode': isDarkMode, 'behind-overlay': behindOverlay, 'scrollable': isSettings }"
   >
     <div v-if="shouldShow" class="button release-banner">
       <a :href="releaseUrl">{{ $t("sidebar.updateIsAvailable") }}</a>
       <i @click="setSeenUpdate" aria-label="close-banner" class="material-icons">close</i>
     </div>
     <SidebarSettings v-if="isSettings"></SidebarSettings>
-    <SidebarGeneral v-else-if="isLoggedIn"></SidebarGeneral>
+    <SidebarGeneral v-if="!isSettings"></SidebarGeneral>
+    <SidebarShare v-if="isValidShare"></SidebarShare>
 
     <div class="buffer"></div>
-    <div class="credits">
+    <div v-if="!isSettings" class="credits">
       <span v-for="item in externalLinks" :key="item.title">
         <a :href="item.url" target="_blank" :title="item.title">{{ item.text }}</a>
       </span>
@@ -27,12 +28,14 @@ import { externalLinks, name, updateAvailable } from "@/utils/constants";
 import { getters, mutations, state } from "@/store"; // Import your custom store
 import SidebarGeneral from "./General.vue";
 import SidebarSettings from "./Settings.vue";
+import SidebarShare from "./Share.vue";
 
 export default {
   name: "sidebar",
   components: {
     SidebarGeneral,
     SidebarSettings,
+    SidebarShare,
   },
   data() {
     return {
@@ -45,6 +48,7 @@ export default {
     mutations.setSeenUpdate(localStorage.getItem("seenUpdate"));
   },
   computed: {
+    isValidShare: () => getters.isValidShare(),
     releaseUrl: () => updateAvailable,
     isDarkMode: () => getters.isDarkMode(),
     isLoggedIn: () => getters.isLoggedIn(),
@@ -168,14 +172,6 @@ body.rtl .action {
   flex-grow: 1;
 }
 
-.clickable {
-  cursor: pointer;
-}
-
-.clickable:hover {
-  box-shadow: 0 2px 2px #00000024, 0 1px 5px #0000001f, 0 3px 1px -2px #0003;
-}
-
 .release-banner {
   background-color: var(--primarColor);
   display: flex;
@@ -183,4 +179,15 @@ body.rtl .action {
   align-items: center;
   margin-bottom: 1em;
 }
+
+#sidebar.scrollable {
+  overflow: auto;
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+#sidebar.scrollable::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, and Opera */
+}
+
 </style>

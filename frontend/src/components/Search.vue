@@ -5,7 +5,7 @@
     @click="clearContext"
   >
     <!-- Search input section -->
-    <div id="input" @click="open">
+    <div id="search-input" @click="open">
       <!-- Close button visible when search is active -->
       <button
         v-if="active"
@@ -34,11 +34,11 @@
     </div>
 
     <!-- Search results for desktop -->
-    <div v-show="active" id="results" ref="result">
+    <div v-show="active" id="results" class="fb-shadow" ref="result">
       <div class="inputWrapper" style="display: flex">
         <select
           v-if="multipleSources"
-          class="searchContext input"
+          class="searchContext button input"
           aria-label="search-path"
           v-model="selectedSource"
           :value="selectedSource"
@@ -122,7 +122,7 @@
           <li
             v-for="(s, k) in results"
             :key="k"
-            class="search-entry"
+            class="search-entry clickable"
             :class="{ active: activeStates[k] }"
             :aria-label="baseName(s.path)"
           >
@@ -306,13 +306,15 @@ export default {
       return this.showHelp;
     },
     activeStates() {
-      // Create a Set of combined `name` and `type` keys for efficient lookup
-      const selectedSet = new Set(
-        state.selected.map((item) => `${item.name}:${item.type}`)
-      );
-      const result = this.results.map((s) => selectedSet.has(`${s.name}:${s.type}`));
-      // Build a map of active states for the `results` array
-      return result;
+      const selectedItems = state.selected ? [].concat(state.selected) : [];
+
+      if (selectedItems.length === 0) {
+        // Return an array of all false if nothing is selected
+        return new Array(this.results.length).fill(false);
+      }
+
+      const selectedPaths = new Set(selectedItems.map((item) => item.path));
+      return this.results.map((result) => selectedPaths.has(result.path));
     },
     sourceInfo() {
       return state.sources.info;
@@ -519,17 +521,13 @@ export default {
     },
     addSelected(event, s) {
       const pathParts = url.removeTrailingSlash(s.path).split("/");
-      let path = this.getContext + s.path;
-      if (this.getContext === "/") {
-        path = s.path;
-      }
+      let path = this.getContext + url.removeTrailingSlash(s.path);
       const modifiedItem = {
         name: pathParts.pop(),
         path: path,
         size: s.size,
         type: s.type,
         source: this.selectedSource || state.sources.current,
-        fullPath: path,
       };
       mutations.resetSelected();
       mutations.addSelected(modifiedItem);
@@ -538,7 +536,10 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
+.sizeInputWrapper {
+  border: 1px solid #ccc;
+}
 .main-input {
   width: 100%;
 }
@@ -555,12 +556,22 @@ export default {
 
 .searchContext.input {
   background-color: var(--primaryColor) !important;
-  border-radius: 0em;
+  border-radius: 0em !important;
   color: white;
   border: unset;
   width: 25%;
   min-width: 7em;
   max-width: 15em;
+}
+
+.searchContext.input option {
+  background: grey;
+  color: white;
+}
+
+.searchContext.input option:hover {
+  background: var(--primaryColor);
+  color: white;
 }
 
 #results > #result-list {
@@ -589,7 +600,6 @@ export default {
   border-top-right-radius: 0px;
   -webkit-transform: translateX(-50%);
   transform: translateX(-50%);
-  -webkit-box-shadow: 0px 2em 50px 10px rgba(0, 0, 0, 0.3);
   box-shadow: 0px 2em 50px 10px rgba(0, 0, 0, 0.3);
   background-color: lightgray;
   max-height: 80vh;
@@ -633,7 +643,7 @@ export default {
   transform: translateX(-50%);
 }
 
-#search #input {
+#search-input {
   background-color: rgba(100, 100, 100, 0.2);
   display: flex;
   height: 100%;
@@ -669,16 +679,11 @@ export default {
   /* IE and Edge */
 }
 
-.search-entry {
-  cursor: pointer;
-  border-radius: 0.25em;
+.search-entry:hover {
+  background-color: var(--alt-background);
 }
 
 .search-entry.active {
-  background-color: var(--surfacePrimary);
-}
-
-.search-entry:hover {
   background-color: var(--surfacePrimary);
 }
 
@@ -749,7 +754,7 @@ body.rtl #search #result ul > * {
   display: block;
 }
 
-#search.active #input {
+#search.active #search-input {
   background-color: var(--background);
   border-color: black;
   border-style: solid;
